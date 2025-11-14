@@ -67,3 +67,4 @@ qseecom-mod-$(CONFIG_COMPAT)	+= compat_qseecom.o
 obj-$(CONFIG_WIGIG_SENSING_SPI)	+= wigig_sensing.o
 obj-$(CONFIG_KINECTICS_XR_NORDIC) += kxrctrl/
 obj-$(CONFIG_HQHARDWARE_INFO)   += huaqinhardware_info/
+obj-$(CONFIG_LEDPULSE_MAX30101) += ledpulse/
