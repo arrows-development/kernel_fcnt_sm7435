@@ -823,6 +823,11 @@ config CHARGER_BQ256XX
 	  charge management and system power path management devices for single
 	  cell Li-ion and Li-polymer batteries.
 
+config QNS_DRIVER
+	tristate "Qnovo QNS wrapper"
+	help
+	  Select this module to enable Qnovo QNS wrapper
+
 source "drivers/power/supply/qcom/Kconfig"
 
 endif # POWER_SUPPLY

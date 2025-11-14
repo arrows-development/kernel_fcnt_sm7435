@@ -102,4 +102,5 @@ qti_battery_charger_main-y += qti_battery_charger.o qti_typec_class.o
 obj-$(CONFIG_RN5T618_POWER)	+= rn5t618_power.o
 obj-$(CONFIG_SCHGM_FLASH)       += schgm-flash.o
 obj-$(CONFIG_CHARGER_BQ256XX)	+= bq256xx_charger.o
+obj-$(CONFIG_QNS_DRIVER)    += qns_system.o
 obj-$(CONFIG_QCOM_POWER_SUPPLY)		+= qcom/
