@@ -21,4 +21,14 @@ config USB_REDRIVER_NB7VPQ904M
 	  it have i2c program interface.
 	  Say Y/M here if you want to support it.
 
+config USB_REDRIVER_PS5169
+	tristate "PS5169 USB 3.1 Gen1/Gen2 10Gbps redriver"
+	select REGMAP_I2C
+	select USB_REDRIVER
+	help
+	  PS5169 come from ON-SEMI company,
+	  it enhance USB super (plus) signal on mobile platform.
+	  it have i2c program interface.
+	  Say Y/M here if you want to support it.
+
 endmenu
