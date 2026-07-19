@@ -26,6 +26,8 @@
 #include <linux/delay.h>
 #include <linux/atomic.h>
 #include <linux/input/mt.h>
+#include <linux/proc_fs.h>
+#include <linux/uaccess.h>
 #include "goodix_ts_core.h"
 
 
@@ -33,6 +35,7 @@
 #define GOODIX_GESTURE_SINGLE_TAP		0x4C
 #define GOODIX_GESTURE_FOD_DOWN			0x46
 #define GOODIX_GESTURE_FOD_UP			0x55
+#define GOODIX_GLOVE_CMD			0x32
 
 /*
  * struct gesture_module - gesture module data
@@ -46,10 +49,123 @@ struct gesture_module {
 	atomic_t registered;
 	struct goodix_ts_core *ts_core;
 	struct goodix_ext_module module;
+	struct proc_dir_entry *proc_dir_entry;
+	bool glove_enabled;
 };
 
 static struct gesture_module *gsx_gesture; /*allocated in gesture init module*/
 static bool module_initialized;
+
+static ssize_t gsx_proc_double_read(struct file *file, char __user *buf,
+		size_t count, loff_t *pos)
+{
+	struct gesture_module *gsx = PDE_DATA(file_inode(file));
+	char tmp_buf[10];
+	int len;
+
+	if (!gsx || !gsx->ts_core)
+		return -ENODEV;
+
+	len = scnprintf(tmp_buf, sizeof(tmp_buf), "%s\n",
+			(gsx->ts_core->gesture_type & GESTURE_DOUBLE_TAP) ?
+			"enable" : "disable");
+	return simple_read_from_buffer(buf, count, pos, tmp_buf, len);
+}
+
+static ssize_t gsx_proc_double_write(struct file *file,
+		const char __user *buf, size_t count, loff_t *pos)
+{
+	struct gesture_module *gsx = PDE_DATA(file_inode(file));
+	char value;
+
+	if (!gsx || !gsx->ts_core)
+		return -ENODEV;
+	if (!count || get_user(value, buf))
+		return -EFAULT;
+
+	if (value == '1' || value == 1) {
+		ts_info("enable double tap");
+		gsx->ts_core->gesture_type |= GESTURE_DOUBLE_TAP;
+	} else if (value == '0' || value == 0) {
+		ts_info("disable double tap");
+		gsx->ts_core->gesture_type &= ~GESTURE_DOUBLE_TAP;
+	} else {
+		return -EINVAL;
+	}
+
+	return count;
+}
+
+static ssize_t gsx_proc_glove_read(struct file *file, char __user *buf,
+		size_t count, loff_t *pos)
+{
+	struct gesture_module *gsx = PDE_DATA(file_inode(file));
+	char tmp_buf[3];
+	int len;
+
+	if (!gsx)
+		return -ENODEV;
+
+	len = scnprintf(tmp_buf, sizeof(tmp_buf), "%d\n",
+			gsx->glove_enabled ? 1 : 0);
+	return simple_read_from_buffer(buf, count, pos, tmp_buf, len);
+}
+
+static int gsx_set_glove_mode(struct gesture_module *gsx, bool enable)
+{
+	struct goodix_ts_cmd cmd = {0};
+	int ret;
+
+	cmd.cmd = GOODIX_GLOVE_CMD;
+	cmd.len = 5;
+	cmd.data[0] = enable;
+	cmd.data[1] = 0xFF;
+	ret = gsx->ts_core->hw_ops->send_cmd(gsx->ts_core, &cmd);
+	if (ret) {
+		ts_err("failed send glove cmd");
+		return ret;
+	}
+
+	gsx->glove_enabled = enable;
+	ts_info("%s glove mode", enable ? "enable" : "disable");
+	return 0;
+}
+
+static ssize_t gsx_proc_glove_write(struct file *file,
+		const char __user *buf, size_t count, loff_t *pos)
+{
+	struct gesture_module *gsx = PDE_DATA(file_inode(file));
+	char value;
+	bool enable;
+	int ret;
+
+	if (!gsx || !gsx->ts_core)
+		return -ENODEV;
+	if (!count || get_user(value, buf))
+		return -EFAULT;
+	if (value == '1' || value == 1)
+		enable = true;
+	else if (value == '0' || value == 0)
+		enable = false;
+	else
+		return -EINVAL;
+
+	ret = gsx_set_glove_mode(gsx, enable);
+	if (ret)
+		return ret;
+
+	return count;
+}
+
+static const struct proc_ops gsx_double_proc_ops = {
+	.proc_read = gsx_proc_double_read,
+	.proc_write = gsx_proc_double_write,
+};
+
+static const struct proc_ops gsx_glove_proc_ops = {
+	.proc_read = gsx_proc_glove_read,
+	.proc_write = gsx_proc_glove_write,
+};
 
 static ssize_t gsx_double_type_show(struct goodix_ext_module *module,
 		char *buf)
@@ -353,8 +469,9 @@ static int gsx_gesture_before_suspend(struct goodix_ts_core *cd,
 }
 
 static int gsx_gesture_before_resume(struct goodix_ts_core *cd,
-	struct goodix_ext_module *module)
+		struct goodix_ext_module *module)
 {
+	struct gesture_module *gsx = module->priv_data;
 	const struct goodix_ts_hw_ops *hw_ops = cd->hw_ops;
 
 	if (cd->gesture_type == 0)
@@ -362,8 +479,21 @@ static int gsx_gesture_before_resume(struct goodix_ts_core *cd,
 
 	disable_irq_wake(cd->irq);
 	hw_ops->reset(cd, GOODIX_NORMAL_RESET_DELAY_MS);
+	if (gsx->glove_enabled)
+		gsx_set_glove_mode(gsx, true);
 
 	return EVT_CANCEL_RESUME;
+}
+
+static int gsx_gesture_after_resume(struct goodix_ts_core *cd,
+		struct goodix_ext_module *module)
+{
+	struct gesture_module *gsx = module->priv_data;
+
+	if (gsx->glove_enabled)
+		gsx_set_glove_mode(gsx, true);
+
+	return EVT_CONTINUE;
 }
 
 static struct goodix_ext_module_funcs gsx_gesture_funcs = {
@@ -372,6 +502,7 @@ static struct goodix_ext_module_funcs gsx_gesture_funcs = {
 	.exit = gsx_gesture_exit,
 	.before_suspend = gsx_gesture_before_suspend,
 	.before_resume = gsx_gesture_before_resume,
+	.after_resume = gsx_gesture_after_resume,
 };
 
 int gesture_module_init(void)
@@ -413,12 +544,36 @@ int gesture_module_init(void)
 		goto err_out;
 	}
 
+	ret = goodix_register_ext_module_no_wait(&gsx_gesture->module);
+	if (ret) {
+		ts_err("failed register gesture module");
+		goto err_sysfs;
+	}
+
+	gsx_gesture->proc_dir_entry = proc_mkdir("goodix_ts.0", NULL);
+	if (!gsx_gesture->proc_dir_entry) {
+		ts_err("failed create goodix gesture proc dir");
+	} else {
+		if (!proc_create_data("double_type", 0660,
+				gsx_gesture->proc_dir_entry, &gsx_double_proc_ops,
+				gsx_gesture))
+			ts_err("failed create double_type proc node");
+		if (!proc_create_data("glove_type", 0660,
+				gsx_gesture->proc_dir_entry, &gsx_glove_proc_ops,
+				gsx_gesture))
+			ts_err("failed create glove_type proc node");
+	}
+
 	module_initialized = true;
-	goodix_register_ext_module_no_wait(&gsx_gesture->module);
 	ts_info("gesture module init success");
 
 	return 0;
 
+err_sysfs:
+	for (i = 0; i < ARRAY_SIZE(gesture_attrs); i++)
+		sysfs_remove_file(&gsx_gesture->module.kobj,
+				&gesture_attrs[i].attr);
+	kobject_put(&gsx_gesture->module.kobj);
 err_out:
 	ts_err("gesture module init failed!");
 	kfree(gsx_gesture);
@@ -434,6 +589,11 @@ void gesture_module_exit(void)
 		return;
 
 	goodix_unregister_ext_module(&gsx_gesture->module);
+	if (gsx_gesture->proc_dir_entry) {
+		remove_proc_entry("double_type", gsx_gesture->proc_dir_entry);
+		remove_proc_entry("glove_type", gsx_gesture->proc_dir_entry);
+		remove_proc_entry("goodix_ts.0", NULL);
+	}
 
 	/* deinit sysfs */
 	for (i = 0; i < ARRAY_SIZE(gesture_attrs); i++)
