@@ -147,7 +147,6 @@ int configure_gpio(unsigned int gpio, int flag)
 		pr_err("%s: invalid gpio\n", __func__);
 		ret = -EINVAL;
 	}
-	get_hardware_info_data(HWID_NFC,"0xC1");
 	return ret;
 }
 

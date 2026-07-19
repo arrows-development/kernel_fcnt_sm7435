@@ -21,7 +21,6 @@
 #define _COMMON_H_
 
 #include <linux/cdev.h>
-#include <linux/hardware_info.h>
 #include <linux/init.h>
 
 #include "i2c_drv.h"
