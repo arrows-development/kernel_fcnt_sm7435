@@ -489,6 +489,8 @@ struct goodix_ts_core {
 	struct regulator *avdd;
 	struct regulator *iovdd;
 	unsigned char gesture_type;
+	/* Set when a double-tap wakes the panel from AOD/low-power state. */
+	bool double_tap_mode;
 
 	int power_on;
 	int irq;
@@ -615,6 +617,7 @@ static struct goodix_ext_attribute ext_attr_##_name = \
 
 /* log macro */
 extern bool debug_log_flag;
+extern bool aodtype;
 #define ts_info(fmt, arg...) \
 		pr_info("[GTP-INF][%s:%d] "fmt"\n", __func__, __LINE__, ##arg)
 #define	ts_err(fmt, arg...) \

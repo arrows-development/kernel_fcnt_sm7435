@@ -391,8 +391,10 @@ static int gsx_gesture_ist(struct goodix_ts_core *cd,
 			input_sync(cd->input_dev);
 			input_report_key(cd->input_dev, KEY_WAKEUP, 0);
 			input_sync(cd->input_dev);
+			cd->double_tap_mode = true;
 		} else {
 			ts_debug("not enable DOUBLE-TAP");
+			cd->double_tap_mode = false;
 		}
 		break;
 	case GOODIX_GESTURE_FOD_DOWN:

@@ -31,6 +31,9 @@
 #define GOODIX_DEFAULT_CFG_NAME		"goodix_cfg_group.cfg"
 #define GOOIDX_INPUT_PHYS			"goodix_ts/input0"
 
+static int goodix_ts_suspend(struct goodix_ts_core *core_data);
+static int goodix_ts_resume(struct goodix_ts_core *core_data);
+
 #if defined(CONFIG_DRM)
 static struct drm_panel *active_panel;
 static void goodix_panel_notifier_callback(enum panel_event_notifier_tag tag,
@@ -771,6 +774,35 @@ static ssize_t goodix_ts_debug_log_store(struct device *dev,
 	return count;
 }
 
+/* show aod status */
+static ssize_t goodix_ts_aod_info_show(struct device *dev,
+				       struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "state:%s\n",
+			aodtype ? "enabled" : "disabled");
+}
+
+/* enable/disable aod */
+static ssize_t goodix_ts_aod_info_store(struct device *dev,
+					struct device_attribute *attr,
+					const char *buf, size_t count)
+{
+	struct goodix_ts_core *core_data = dev_get_drvdata(dev);
+
+	if (!buf || count <= 0)
+		return -EINVAL;
+
+	if (buf[0] != '0') {
+		aodtype = true;
+		goodix_ts_suspend(core_data);
+	} else {
+		aodtype = false;
+		goodix_ts_resume(core_data);
+	}
+
+	return count;
+}
+
 static DEVICE_ATTR(driver_info, 0440,
 		driver_info_show, NULL);
 static DEVICE_ATTR(chip_info, 0440,
@@ -789,6 +821,8 @@ static DEVICE_ATTR(esd_info, 0664,
 		goodix_ts_esd_info_show, goodix_ts_esd_info_store);
 static DEVICE_ATTR(debug_log, 0664,
 		goodix_ts_debug_log_show, goodix_ts_debug_log_store);
+static DEVICE_ATTR(aod_info, 0664,
+		goodix_ts_aod_info_show, goodix_ts_aod_info_store);
 
 static struct attribute *sysfs_attrs[] = {
 	&dev_attr_driver_info.attr,
@@ -800,6 +834,7 @@ static struct attribute *sysfs_attrs[] = {
 	&dev_attr_irq_info.attr,
 	&dev_attr_esd_info.attr,
 	&dev_attr_debug_log.attr,
+	&dev_attr_aod_info.attr,
 	NULL,
 };
 
@@ -1810,11 +1845,21 @@ out:
  * goodix_ts_resume - Touchscreen resume function
  * Called by PM/FB/EARLYSUSPEN module to wakeup device
  */
+static bool first_tp_pull;
+static bool allow_tp_resume_in_aod;
+
 static int goodix_ts_resume(struct goodix_ts_core *core_data)
 {
 	struct goodix_ext_module *ext_module, *next;
 	struct goodix_ts_hw_ops *hw_ops = core_data->hw_ops;
 	int ret;
+
+	if (aodtype && !allow_tp_resume_in_aod) {
+		first_tp_pull = true;
+		allow_tp_resume_in_aod = true;
+		return 0;
+	}
+	allow_tp_resume_in_aod = false;
 
 	if (core_data->init_stage < CORE_INIT_STAGE2 ||
 			!atomic_read(&core_data->suspended))
@@ -1912,6 +1957,26 @@ static void goodix_panel_notifier_callback(enum panel_event_notifier_tag tag,
 		ts_debug("notification serviced :%d\n",
 				notification->notif_type);
 		break;
+	}
+
+	/*
+	 * A double-tap from AOD wakes the display before the normal panel
+	 * unblank path has completed.  The stock driver keeps the touch
+	 * controller resume pending until that unblank notification.
+	 */
+	if (core_data->double_tap_mode) {
+		if (aodtype && first_tp_pull) {
+			goodix_ts_resume(core_data);
+			first_tp_pull = false;
+		}
+		aodtype = false;
+		core_data->double_tap_mode = false;
+	} else {
+		core_data->double_tap_mode = false;
+		if (!aodtype && first_tp_pull) {
+			goodix_ts_resume(core_data);
+			first_tp_pull = false;
+		}
 	}
 }
 
