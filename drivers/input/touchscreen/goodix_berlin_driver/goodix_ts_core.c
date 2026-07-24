@@ -787,18 +787,10 @@ static ssize_t goodix_ts_aod_info_store(struct device *dev,
 					struct device_attribute *attr,
 					const char *buf, size_t count)
 {
-	struct goodix_ts_core *core_data = dev_get_drvdata(dev);
-
 	if (!buf || count <= 0)
 		return -EINVAL;
 
-	if (buf[0] != '0') {
-		aodtype = true;
-		goodix_ts_suspend(core_data);
-	} else {
-		aodtype = false;
-		goodix_ts_resume(core_data);
-	}
+	aodtype = (buf[0] != '0');
 
 	return count;
 }
