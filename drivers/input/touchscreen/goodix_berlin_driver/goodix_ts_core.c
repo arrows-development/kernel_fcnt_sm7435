@@ -1846,7 +1846,7 @@ static int goodix_ts_resume(struct goodix_ts_core *core_data)
 	struct goodix_ts_hw_ops *hw_ops = core_data->hw_ops;
 	int ret;
 
-	if (aodtype && !allow_tp_resume_in_aod) {
+	if (aodtype && core_data->double_tap_mode && !allow_tp_resume_in_aod) {
 		first_tp_pull = true;
 		allow_tp_resume_in_aod = true;
 		return 0;
