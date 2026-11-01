@@ -6205,7 +6205,7 @@ static int dwc3_otg_start_peripheral(struct dwc3_msm *mdwc, int on)
 			flush_work(&dwc->drd_work);
 
 		dwc3_msm_notify_event(dwc, DWC3_GSI_EVT_BUF_SETUP, 0);
-
+		msleep(10);
 		dwc3_override_vbus_status(mdwc, true);
 
 		usb_redriver_notify_connect(mdwc->redriver,
